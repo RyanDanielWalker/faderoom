@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, DragEvent, ChangeEvent } from "react";
-import { useFaderoom } from "@/lib/store";
+import { useFaderoom, DeckSide } from "@/lib/store";
 import { putTrack, deleteTrack as dbDeleteTrack } from "@/lib/db";
 import { getAudioDuration, formatDuration, formatSize } from "@/lib/audio";
 import { useHydrate } from "@/lib/useHydrate";
@@ -62,12 +62,12 @@ export function Crate() {
     removeTrack(id);
   }
 
-  async function loadToDeck(trackId: string) {
-    const side = nextDeckTarget;
+  async function loadTo(side: DeckSide, trackId: string, explicit: boolean) {
     try {
       await engine.loadTrack(side, trackId);
       setDeckTrack(side, trackId);
-      cycleDeckTarget();
+      // Only cycle the auto-target if it was an implicit (double-click) load
+      if (!explicit) cycleDeckTarget();
     } catch (err) {
       console.error("Failed to load track:", err);
     }
@@ -104,15 +104,16 @@ export function Crate() {
       ) : (
         <div className="flex-1 overflow-y-auto">
           {tracks.map((track) => {
-            const onDecks: ("A" | "B")[] = [];
+            const onDecks: DeckSide[] = [];
             if (decks.A.trackId === track.id) onDecks.push("A");
             if (decks.B.trackId === track.id) onDecks.push("B");
 
             return (
               <div
                 key={track.id}
-                onClick={() => loadToDeck(track.id)}
-                className="group px-4 py-3 border-b border-border hover:bg-surface-2 transition-colors cursor-pointer"
+                onDoubleClick={() => loadTo(nextDeckTarget, track.id, false)}
+                className="group px-4 py-3 border-b border-border hover:bg-surface-2 transition-colors"
+                title="Double-click to auto-load"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
@@ -132,16 +133,38 @@ export function Crate() {
                       <span>{formatSize(track.size)}</span>
                     </div>
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onRemove(track.id);
-                    }}
-                    className="text-text-muted opacity-0 group-hover:opacity-100 hover:text-accent text-xs transition-opacity"
-                    title="Remove from crate"
-                  >
-                    ×
-                  </button>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        loadTo("A", track.id, true);
+                      }}
+                      className="text-xs px-1.5 py-0.5 border border-border hover:border-accent hover:text-accent rounded-sm transition-colors"
+                      title="Load to Deck A"
+                    >
+                      → A
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        loadTo("B", track.id, true);
+                      }}
+                      className="text-xs px-1.5 py-0.5 border border-border hover:border-accent hover:text-accent rounded-sm transition-colors"
+                      title="Load to Deck B"
+                    >
+                      → B
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRemove(track.id);
+                      }}
+                      className="text-text-muted hover:text-accent text-xs px-1 transition-colors"
+                      title="Remove from crate"
+                    >
+                      ×
+                    </button>
+                  </div>
                 </div>
               </div>
             );
