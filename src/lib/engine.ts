@@ -1,42 +1,47 @@
-// The Web Audio graph and deck state. This is the audio engine.
-// All audio-producing code goes through here.
-
 import { getTrackBytes } from "./db";
 
 export type DeckSide = "A" | "B";
 
 type DeckState = {
   source: AudioBufferSourceNode | null;
-  gain: GainNode;
+  channelGain: GainNode; // volume fader (0..1)
+  crossfadeGain: GainNode; // crossfader contribution (0..1)
   buffer: AudioBuffer | null;
-  startedAt: number; // AudioContext time when playback started
-  offset: number; // seconds into the track where we started
+  startedAt: number;
+  offset: number;
   isPlaying: boolean;
+  volume: number; // cached 0..1
 };
 
 class Engine {
   private ctx: AudioContext | null = null;
   private decks: Record<DeckSide, DeckState> | null = null;
+  private crossfadePosition = 0.5; // 0 = full A, 1 = full B
   private listeners = new Set<() => void>();
 
-  // Lazy init — must be called from a user gesture
   private ensureContext(): AudioContext {
     if (this.ctx) return this.ctx;
     this.ctx = new AudioContext();
     const makeDeck = (): DeckState => {
-      const gain = this.ctx!.createGain();
-      gain.gain.value = 1;
-      gain.connect(this.ctx!.destination);
+      const channelGain = this.ctx!.createGain();
+      const crossfadeGain = this.ctx!.createGain();
+      channelGain.gain.value = 1;
+      crossfadeGain.gain.value = 1; // will be set by applyCrossfade below
+      channelGain.connect(crossfadeGain);
+      crossfadeGain.connect(this.ctx!.destination);
       return {
         source: null,
-        gain,
+        channelGain,
+        crossfadeGain,
         buffer: null,
         startedAt: 0,
         offset: 0,
         isPlaying: false,
+        volume: 1,
       };
     };
     this.decks = { A: makeDeck(), B: makeDeck() };
+    this.applyCrossfade();
     return this.ctx;
   }
 
@@ -47,10 +52,8 @@ class Engine {
     const bytes = await getTrackBytes(trackId);
     if (!bytes) throw new Error("Track bytes not found in IDB");
 
-    // decodeAudioData consumes the ArrayBuffer, so clone it
     const buffer = await ctx.decodeAudioData(bytes.slice(0));
 
-    // Stop whatever is currently on this deck
     this.stop(side);
 
     const deck = this.decks[side];
@@ -70,9 +73,8 @@ class Engine {
 
     const source = ctx.createBufferSource();
     source.buffer = deck.buffer;
-    source.connect(deck.gain);
+    source.connect(deck.channelGain);
     source.onended = () => {
-      // Only react if this is still the current source (not a manual stop)
       if (deck.source === source) {
         deck.isPlaying = false;
         deck.offset = deck.buffer?.duration ?? 0;
@@ -118,7 +120,43 @@ class Engine {
     deck.offset = 0;
   }
 
-  // Called from UI to read current playhead time
+  // Volume fader per deck (0..1)
+  setVolume(side: DeckSide, value: number): void {
+    this.ensureContext();
+    if (!this.decks) return;
+    const deck = this.decks[side];
+    const clamped = Math.max(0, Math.min(1, value));
+    deck.volume = clamped;
+    // setTargetAtTime smooths the change to avoid clicks
+    deck.channelGain.gain.setTargetAtTime(clamped, this.ctx!.currentTime, 0.01);
+  }
+
+  getVolume(side: DeckSide): number {
+    return this.decks?.[side].volume ?? 1;
+  }
+
+  // Crossfader position: 0 = full A, 0.5 = center, 1 = full B
+  setCrossfade(position: number): void {
+    this.ensureContext();
+    this.crossfadePosition = Math.max(0, Math.min(1, position));
+    this.applyCrossfade();
+  }
+
+  getCrossfade(): number {
+    return this.crossfadePosition;
+  }
+
+  // Equal-power crossfade curve (preserves perceived loudness through the sweep)
+  private applyCrossfade(): void {
+    if (!this.decks || !this.ctx) return;
+    const x = this.crossfadePosition;
+    const gainA = Math.cos((x * Math.PI) / 2);
+    const gainB = Math.sin((x * Math.PI) / 2);
+    const t = this.ctx.currentTime;
+    this.decks.A.crossfadeGain.gain.setTargetAtTime(gainA, t, 0.01);
+    this.decks.B.crossfadeGain.gain.setTargetAtTime(gainB, t, 0.01);
+  }
+
   getCurrentTime(side: DeckSide): number {
     if (!this.decks || !this.ctx) return 0;
     const deck = this.decks[side];
@@ -134,7 +172,6 @@ class Engine {
     return this.decks?.[side].isPlaying ?? false;
   }
 
-  // Subscribe to state changes
   subscribe(fn: () => void): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
