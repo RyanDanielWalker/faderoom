@@ -5,6 +5,7 @@ import { useFaderoom } from "@/lib/store";
 import { putTrack, deleteTrack as dbDeleteTrack } from "@/lib/db";
 import { getAudioDuration, formatDuration, formatSize } from "@/lib/audio";
 import { useHydrate } from "@/lib/useHydrate";
+import { engine } from "@/lib/engine";
 
 export function Crate() {
   useHydrate();
@@ -12,6 +13,10 @@ export function Crate() {
   const tracks = useFaderoom((s) => s.tracks);
   const addTrack = useFaderoom((s) => s.addTrack);
   const removeTrack = useFaderoom((s) => s.removeTrack);
+  const decks = useFaderoom((s) => s.decks);
+  const nextDeckTarget = useFaderoom((s) => s.nextDeckTarget);
+  const setDeckTrack = useFaderoom((s) => s.setDeckTrack);
+  const cycleDeckTarget = useFaderoom((s) => s.cycleDeckTarget);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -57,6 +62,17 @@ export function Crate() {
     removeTrack(id);
   }
 
+  async function loadToDeck(trackId: string) {
+    const side = nextDeckTarget;
+    try {
+      await engine.loadTrack(side, trackId);
+      setDeckTrack(side, trackId);
+      cycleDeckTarget();
+    } catch (err) {
+      console.error("Failed to load track:", err);
+    }
+  }
+
   return (
     <aside
       onDragOver={(e) => {
@@ -87,34 +103,49 @@ export function Crate() {
         </button>
       ) : (
         <div className="flex-1 overflow-y-auto">
-          {tracks.map((track) => (
-            <div
-              key={track.id}
-              className="group px-4 py-3 border-b border-border hover:bg-surface-2 transition-colors cursor-pointer"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm truncate" title={track.name}>
-                    {track.name}
+          {tracks.map((track) => {
+            const onDecks: ("A" | "B")[] = [];
+            if (decks.A.trackId === track.id) onDecks.push("A");
+            if (decks.B.trackId === track.id) onDecks.push("B");
+
+            return (
+              <div
+                key={track.id}
+                onClick={() => loadToDeck(track.id)}
+                className="group px-4 py-3 border-b border-border hover:bg-surface-2 transition-colors cursor-pointer"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div
+                      className="text-sm truncate flex items-center gap-2"
+                      title={track.name}
+                    >
+                      {onDecks.length > 0 && (
+                        <span className="text-accent text-xs font-bold shrink-0">
+                          {onDecks.map((d) => `[${d}]`).join("")}
+                        </span>
+                      )}
+                      <span className="truncate">{track.name}</span>
+                    </div>
+                    <div className="text-xs text-text-muted mt-1 flex gap-3">
+                      <span>{formatDuration(track.duration)}</span>
+                      <span>{formatSize(track.size)}</span>
+                    </div>
                   </div>
-                  <div className="text-xs text-text-muted mt-1 flex gap-3">
-                    <span>{formatDuration(track.duration)}</span>
-                    <span>{formatSize(track.size)}</span>
-                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRemove(track.id);
+                    }}
+                    className="text-text-muted opacity-0 group-hover:opacity-100 hover:text-accent text-xs transition-opacity"
+                    title="Remove from crate"
+                  >
+                    ×
+                  </button>
                 </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRemove(track.id);
-                  }}
-                  className="text-text-muted opacity-0 group-hover:opacity-100 hover:text-accent text-xs transition-opacity"
-                  title="Remove from crate"
-                >
-                  ×
-                </button>
               </div>
-            </div>
-          ))}
+            );
+          })}
           <button
             onClick={() => fileInputRef.current?.click()}
             className="w-full px-4 py-3 text-xs text-text-muted uppercase tracking-widest hover:bg-surface-2 hover:text-text transition-colors"
