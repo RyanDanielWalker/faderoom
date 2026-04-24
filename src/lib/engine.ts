@@ -1,36 +1,68 @@
 import { getTrackBytes } from "./db";
 
 export type DeckSide = "A" | "B";
+export type EQBand = "high" | "mid" | "low";
 
 type DeckState = {
   source: AudioBufferSourceNode | null;
-  channelGain: GainNode; // volume fader (0..1)
-  crossfadeGain: GainNode; // crossfader contribution (0..1)
+  eqHigh: BiquadFilterNode;
+  eqMid: BiquadFilterNode;
+  eqLow: BiquadFilterNode;
+  channelGain: GainNode;
+  crossfadeGain: GainNode;
   buffer: AudioBuffer | null;
   startedAt: number;
   offset: number;
   isPlaying: boolean;
-  volume: number; // cached 0..1
+  volume: number;
+  eq: { high: number; mid: number; low: number }; // dB
 };
 
 class Engine {
   private ctx: AudioContext | null = null;
   private decks: Record<DeckSide, DeckState> | null = null;
-  private crossfadePosition = 0.5; // 0 = full A, 1 = full B
+  private crossfadePosition = 0.5;
   private listeners = new Set<() => void>();
 
   private ensureContext(): AudioContext {
     if (this.ctx) return this.ctx;
     this.ctx = new AudioContext();
     const makeDeck = (): DeckState => {
-      const channelGain = this.ctx!.createGain();
-      const crossfadeGain = this.ctx!.createGain();
+      const ctx = this.ctx!;
+
+      const eqHigh = ctx.createBiquadFilter();
+      eqHigh.type = "highshelf";
+      eqHigh.frequency.value = 10000;
+      eqHigh.gain.value = 0;
+
+      const eqMid = ctx.createBiquadFilter();
+      eqMid.type = "peaking";
+      eqMid.frequency.value = 1000;
+      eqMid.Q.value = 1;
+      eqMid.gain.value = 0;
+
+      const eqLow = ctx.createBiquadFilter();
+      eqLow.type = "lowshelf";
+      eqLow.frequency.value = 220;
+      eqLow.gain.value = 0;
+
+      const channelGain = ctx.createGain();
+      const crossfadeGain = ctx.createGain();
       channelGain.gain.value = 1;
-      crossfadeGain.gain.value = 1; // will be set by applyCrossfade below
+      crossfadeGain.gain.value = 1;
+
+      // source -> high -> mid -> low -> channel -> crossfade -> destination
+      eqHigh.connect(eqMid);
+      eqMid.connect(eqLow);
+      eqLow.connect(channelGain);
       channelGain.connect(crossfadeGain);
-      crossfadeGain.connect(this.ctx!.destination);
+      crossfadeGain.connect(ctx.destination);
+
       return {
         source: null,
+        eqHigh,
+        eqMid,
+        eqLow,
         channelGain,
         crossfadeGain,
         buffer: null,
@@ -38,6 +70,7 @@ class Engine {
         offset: 0,
         isPlaying: false,
         volume: 1,
+        eq: { high: 0, mid: 0, low: 0 },
       };
     };
     this.decks = { A: makeDeck(), B: makeDeck() };
@@ -73,7 +106,8 @@ class Engine {
 
     const source = ctx.createBufferSource();
     source.buffer = deck.buffer;
-    source.connect(deck.channelGain);
+    // connect to the first EQ node, not directly to channelGain
+    source.connect(deck.eqHigh);
     source.onended = () => {
       if (deck.source === source) {
         deck.isPlaying = false;
@@ -120,14 +154,12 @@ class Engine {
     deck.offset = 0;
   }
 
-  // Volume fader per deck (0..1)
   setVolume(side: DeckSide, value: number): void {
     this.ensureContext();
     if (!this.decks) return;
     const deck = this.decks[side];
     const clamped = Math.max(0, Math.min(1, value));
     deck.volume = clamped;
-    // setTargetAtTime smooths the change to avoid clicks
     deck.channelGain.gain.setTargetAtTime(clamped, this.ctx!.currentTime, 0.01);
   }
 
@@ -135,7 +167,22 @@ class Engine {
     return this.decks?.[side].volume ?? 1;
   }
 
-  // Crossfader position: 0 = full A, 0.5 = center, 1 = full B
+  // EQ gain in dB. Range: -26 to +6.
+  setEQ(side: DeckSide, band: EQBand, db: number): void {
+    this.ensureContext();
+    if (!this.decks) return;
+    const deck = this.decks[side];
+    const clamped = Math.max(-40, Math.min(6, db));
+    deck.eq[band] = clamped;
+    const filter =
+      band === "high" ? deck.eqHigh : band === "mid" ? deck.eqMid : deck.eqLow;
+    filter.gain.setTargetAtTime(clamped, this.ctx!.currentTime, 0.01);
+  }
+
+  getEQ(side: DeckSide, band: EQBand): number {
+    return this.decks?.[side].eq[band] ?? 0;
+  }
+
   setCrossfade(position: number): void {
     this.ensureContext();
     this.crossfadePosition = Math.max(0, Math.min(1, position));
@@ -146,7 +193,6 @@ class Engine {
     return this.crossfadePosition;
   }
 
-  // Equal-power crossfade curve (preserves perceived loudness through the sweep)
   private applyCrossfade(): void {
     if (!this.decks || !this.ctx) return;
     const x = this.crossfadePosition;

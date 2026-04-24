@@ -1,18 +1,40 @@
 "use client";
 
-import { useFaderoom } from "@/lib/store";
+import { useFaderoom, DeckSide, EQBand } from "@/lib/store";
 import { engine } from "@/lib/engine";
+import { Knob } from "./Knob";
+
+const BANDS: EQBand[] = ["high", "mid", "low"];
+const BAND_LABELS: Record<EQBand, string> = {
+  high: "HI",
+  mid: "MID",
+  low: "LO",
+};
+
+function formatDb(db: number): string {
+  if (db === 0) return "0";
+  const sign = db > 0 ? "+" : "";
+  return `${sign}${db.toFixed(0)}`;
+}
 
 export function Mixer() {
   const volumeA = useFaderoom((s) => s.decks.A.volume);
   const volumeB = useFaderoom((s) => s.decks.B.volume);
+  const eqA = useFaderoom((s) => s.decks.A.eq);
+  const eqB = useFaderoom((s) => s.decks.B.eq);
   const crossfade = useFaderoom((s) => s.crossfade);
   const setDeckVolume = useFaderoom((s) => s.setDeckVolume);
+  const setDeckEQ = useFaderoom((s) => s.setDeckEQ);
   const setCrossfade = useFaderoom((s) => s.setCrossfade);
 
-  function handleVolume(side: "A" | "B", value: number) {
+  function handleVolume(side: DeckSide, value: number) {
     engine.setVolume(side, value);
     setDeckVolume(side, value);
+  }
+
+  function handleEQ(side: DeckSide, band: EQBand, value: number) {
+    engine.setEQ(side, band, value);
+    setDeckEQ(side, band, value);
   }
 
   function handleCrossfade(value: number) {
@@ -26,25 +48,41 @@ export function Mixer() {
         mixer
       </div>
 
-      <div className="flex-1 p-5 flex flex-col gap-5 min-h-0">
-        {/* EQ placeholders (step 5) */}
-        <div className="grid grid-cols-2 gap-3">
-          {["HIGH", "MID", "LOW"].map((band) => (
-            <div key={band} className="contents">
-              <div className="h-7 bg-surface-2 border border-border rounded-sm" />
-              <div className="h-7 bg-surface-2 border border-border rounded-sm" />
-            </div>
-          ))}
-        </div>
+      <div className="flex-1 p-5 flex flex-col gap-4 min-h-0">
+        {/* EQ knobs — 3 rows (HI, MID, LO), 2 columns (A, B) */}
+        {BANDS.map((band) => (
+          <div key={band} className="grid grid-cols-2 gap-3">
+            {(["A", "B"] as const).map((side) => {
+              const eq = side === "A" ? eqA : eqB;
+              return (
+                <div
+                  key={side}
+                  className="flex items-center justify-center gap-2 py-1"
+                >
+                  <Knob
+                    value={eq[band]}
+                    min={-40}
+                    max={6}
+                    defaultValue={0}
+                    label={BAND_LABELS[band]}
+                    size={40}
+                    format={formatDb}
+                    onChange={(v) => handleEQ(side, band, v)}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ))}
 
         {/* Channel faders */}
-        <div className="grid grid-cols-2 gap-3 h-48">
+        <div className="grid grid-cols-2 gap-3 h-40 mt-2">
           {(["A", "B"] as const).map((side) => {
             const volume = side === "A" ? volumeA : volumeB;
             return (
               <div
                 key={side}
-                className="bg-surface-2 border border-border rounded-sm flex flex-col items-center justify-between py-3"
+                className="bg-surface-2 border border-border rounded-sm flex flex-col items-center justify-between py-2"
               >
                 <div className="text-[10px] uppercase tracking-widest text-text-muted">
                   {Math.round(volume * 100)}
