@@ -1,5 +1,6 @@
 import { getTrackBytes } from "./db";
 import { extractPeaks, Peak } from "./waveform";
+import { analyze } from "web-audio-beat-detector";
 
 export type DeckSide = "A" | "B";
 export type EQBand = "high" | "mid" | "low";
@@ -99,6 +100,19 @@ class Engine {
     deck.offset = 0;
     deck.isPlaying = false;
     this.notify();
+  }
+
+  async analyzeBPM(side: DeckSide): Promise<number | null> {
+    if (!this.decks) return null;
+    const deck = this.decks[side];
+    if (!deck.buffer) return null;
+    try {
+      const bpm = await analyze(deck.buffer);
+      return Math.round(bpm * 10) / 10; // 1 decimal place
+    } catch (err) {
+      console.error("BPM analysis failed:", err);
+      return null;
+    }
   }
 
   play(side: DeckSide): void {

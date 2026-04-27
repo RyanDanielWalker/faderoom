@@ -74,8 +74,14 @@ export function Deck({ side }: { side: DeckSide }) {
           {hasTrack ? formatDuration(currentTime) : "00:00"} /{" "}
           {hasTrack ? formatDuration(duration) : "00:00"}
         </div>
-        <div className="text-xs text-text-muted uppercase tracking-widest">
-          --- BPM
+        <div className="text-xs uppercase tracking-widest tabular-nums">
+          {track?.bpm !== undefined ? (
+            <span className="text-accent">{track.bpm.toFixed(1)} BPM</span>
+          ) : hasTrack ? (
+            <span className="text-text-muted animate-pulse">analyzing…</span>
+          ) : (
+            <span className="text-text-muted">--- BPM</span>
+          )}
         </div>
       </div>
 

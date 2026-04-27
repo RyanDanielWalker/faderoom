@@ -64,3 +64,20 @@ export async function deleteTrack(id: string): Promise<void> {
     tx.onerror = () => reject(tx.error);
   });
 }
+
+export async function updateTrackBPM(id: string, bpm: number): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.get(id);
+    req.onsuccess = () => {
+      const stored = req.result;
+      if (!stored) return resolve();
+      stored.bpm = bpm;
+      store.put(stored);
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}

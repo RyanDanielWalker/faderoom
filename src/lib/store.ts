@@ -6,6 +6,7 @@ export type Track = {
   duration: number;
   size: number;
   addedAt: number;
+  bpm?: number;
 };
 
 export type DeckSide = "A" | "B";
@@ -36,6 +37,7 @@ type FaderoomState = {
   setDeckEQ: (side: DeckSide, band: EQBand, value: number) => void;
   setCrossfade: (v: number) => void;
   cycleDeckTarget: () => void;
+  setTrackBPM: (id: string, bpm: number) => void;
 };
 
 const defaultEQ = () => ({ high: 0, mid: 0, low: 0 });
@@ -92,5 +94,9 @@ export const useFaderoom = create<FaderoomState>((set) => ({
   cycleDeckTarget: () =>
     set((state) => ({
       nextDeckTarget: state.nextDeckTarget === "A" ? "B" : "A",
+    })),
+  setTrackBPM: (id, bpm) =>
+    set((state) => ({
+      tracks: state.tracks.map((t) => (t.id === id ? { ...t, bpm } : t)),
     })),
 }));

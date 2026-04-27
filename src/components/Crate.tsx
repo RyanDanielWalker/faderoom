@@ -2,7 +2,11 @@
 
 import { useRef, useState, DragEvent, ChangeEvent } from "react";
 import { useFaderoom, DeckSide } from "@/lib/store";
-import { putTrack, deleteTrack as dbDeleteTrack } from "@/lib/db";
+import {
+  putTrack,
+  deleteTrack as dbDeleteTrack,
+  updateTrackBPM,
+} from "@/lib/db";
 import { getAudioDuration, formatDuration, formatSize } from "@/lib/audio";
 import { useHydrate } from "@/lib/useHydrate";
 import { engine } from "@/lib/engine";
@@ -16,6 +20,7 @@ export function Crate() {
   const decks = useFaderoom((s) => s.decks);
   const nextDeckTarget = useFaderoom((s) => s.nextDeckTarget);
   const setDeckTrack = useFaderoom((s) => s.setDeckTrack);
+  const setTrackBPM = useFaderoom((s) => s.setTrackBPM);
   const cycleDeckTarget = useFaderoom((s) => s.cycleDeckTarget);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -66,8 +71,17 @@ export function Crate() {
     try {
       await engine.loadTrack(side, trackId);
       setDeckTrack(side, trackId);
-      // Only cycle the auto-target if it was an implicit (double-click) load
       if (!explicit) cycleDeckTarget();
+
+      // Analyze BPM if we don't have it yet
+      const existing = tracks.find((t) => t.id === trackId);
+      if (existing && existing.bpm === undefined) {
+        const bpm = await engine.analyzeBPM(side);
+        if (bpm !== null) {
+          setTrackBPM(trackId, bpm);
+          await updateTrackBPM(trackId, bpm);
+        }
+      }
     } catch (err) {
       console.error("Failed to load track:", err);
     }
@@ -131,6 +145,11 @@ export function Crate() {
                     <div className="text-xs text-text-muted mt-1 flex gap-3">
                       <span>{formatDuration(track.duration)}</span>
                       <span>{formatSize(track.size)}</span>
+                      {track.bpm !== undefined && (
+                        <span className="text-accent">
+                          {track.bpm.toFixed(1)} BPM
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
