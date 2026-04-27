@@ -1,7 +1,10 @@
 import { getTrackBytes } from "./db";
+import { extractPeaks, Peak } from "./waveform";
 
 export type DeckSide = "A" | "B";
 export type EQBand = "high" | "mid" | "low";
+
+const WAVEFORM_BUCKETS = 2000; // fine enough for any reasonable display width
 
 type DeckState = {
   source: AudioBufferSourceNode | null;
@@ -11,11 +14,12 @@ type DeckState = {
   channelGain: GainNode;
   crossfadeGain: GainNode;
   buffer: AudioBuffer | null;
+  peaks: Peak[] | null;
   startedAt: number;
   offset: number;
   isPlaying: boolean;
   volume: number;
-  eq: { high: number; mid: number; low: number }; // dB
+  eq: { high: number; mid: number; low: number };
 };
 
 class Engine {
@@ -51,7 +55,6 @@ class Engine {
       channelGain.gain.value = 1;
       crossfadeGain.gain.value = 1;
 
-      // source -> high -> mid -> low -> channel -> crossfade -> destination
       eqHigh.connect(eqMid);
       eqMid.connect(eqLow);
       eqLow.connect(channelGain);
@@ -66,6 +69,7 @@ class Engine {
         channelGain,
         crossfadeGain,
         buffer: null,
+        peaks: null,
         startedAt: 0,
         offset: 0,
         isPlaying: false,
@@ -91,6 +95,7 @@ class Engine {
 
     const deck = this.decks[side];
     deck.buffer = buffer;
+    deck.peaks = extractPeaks(buffer, WAVEFORM_BUCKETS);
     deck.offset = 0;
     deck.isPlaying = false;
     this.notify();
@@ -106,7 +111,6 @@ class Engine {
 
     const source = ctx.createBufferSource();
     source.buffer = deck.buffer;
-    // connect to the first EQ node, not directly to channelGain
     source.connect(deck.eqHigh);
     source.onended = () => {
       if (deck.source === source) {
@@ -154,6 +158,38 @@ class Engine {
     deck.offset = 0;
   }
 
+  // Jump to a specific time in the track.
+  // If playing, stops and restarts from the new position.
+  seek(side: DeckSide, time: number): void {
+    if (!this.decks) return;
+    const deck = this.decks[side];
+    if (!deck.buffer) return;
+
+    const clamped = Math.max(0, Math.min(deck.buffer.duration, time));
+    const wasPlaying = deck.isPlaying;
+
+    if (wasPlaying) {
+      // Stop current source without resetting offset
+      if (deck.source) {
+        deck.source.onended = null;
+        try {
+          deck.source.stop();
+        } catch {}
+        deck.source.disconnect();
+        deck.source = null;
+      }
+      deck.isPlaying = false;
+    }
+
+    deck.offset = clamped;
+
+    if (wasPlaying) {
+      this.play(side);
+    } else {
+      this.notify();
+    }
+  }
+
   setVolume(side: DeckSide, value: number): void {
     this.ensureContext();
     if (!this.decks) return;
@@ -167,7 +203,6 @@ class Engine {
     return this.decks?.[side].volume ?? 1;
   }
 
-  // EQ gain in dB. Range: -26 to +6.
   setEQ(side: DeckSide, band: EQBand, db: number): void {
     this.ensureContext();
     if (!this.decks) return;
@@ -212,6 +247,10 @@ class Engine {
 
   getDuration(side: DeckSide): number {
     return this.decks?.[side].buffer?.duration ?? 0;
+  }
+
+  getPeaks(side: DeckSide): Peak[] | null {
+    return this.decks?.[side].peaks ?? null;
   }
 
   isPlaying(side: DeckSide): boolean {

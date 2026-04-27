@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useFaderoom, DeckSide } from "@/lib/store";
 import { engine } from "@/lib/engine";
 import { formatDuration } from "@/lib/audio";
+import { Waveform } from "./Waveform";
 
 export function Deck({ side }: { side: DeckSide }) {
   const deck = useFaderoom((s) => s.decks[side]);
@@ -12,9 +13,11 @@ export function Deck({ side }: { side: DeckSide }) {
 
   const [currentTime, setCurrentTime] = useState(0);
 
-  // Update time display while playing
   useEffect(() => {
-    if (!deck.isPlaying) return;
+    if (!deck.isPlaying) {
+      setCurrentTime(engine.getCurrentTime(side));
+      return;
+    }
     let raf: number;
     const tick = () => {
       setCurrentTime(engine.getCurrentTime(side));
@@ -24,12 +27,11 @@ export function Deck({ side }: { side: DeckSide }) {
     return () => cancelAnimationFrame(raf);
   }, [deck.isPlaying, side]);
 
-  // Sync engine onended with store state
   useEffect(() => {
     const unsub = engine.subscribe(() => {
       const playing = engine.isPlaying(side);
       setDeckPlaying(side, playing);
-      if (!playing) setCurrentTime(engine.getCurrentTime(side));
+      setCurrentTime(engine.getCurrentTime(side));
     });
     return unsub;
   }, [side, setDeckPlaying]);
@@ -63,16 +65,12 @@ export function Deck({ side }: { side: DeckSide }) {
         </span>
       </div>
 
-      {/* Waveform placeholder (with subtle playing indicator for now) */}
-      <div
-        className={`h-32 border-b border-border bg-surface/40 transition-colors ${
-          deck.isPlaying ? "bg-accent/5" : ""
-        }`}
-      />
+      {/* Waveform */}
+      <Waveform side={side} isPlaying={deck.isPlaying} trackId={deck.trackId} />
 
       {/* Track info */}
       <div className="p-4 flex items-center justify-between">
-        <div className="text-xs text-text-muted uppercase tracking-widest">
+        <div className="text-xs text-text-muted uppercase tracking-widest tabular-nums">
           {hasTrack ? formatDuration(currentTime) : "00:00"} /{" "}
           {hasTrack ? formatDuration(duration) : "00:00"}
         </div>
