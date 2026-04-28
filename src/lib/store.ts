@@ -17,6 +17,7 @@ type DeckSlot = {
   isPlaying: boolean;
   volume: number;
   eq: { high: number; mid: number; low: number };
+  playbackRate: number;
 };
 
 type FaderoomState = {
@@ -38,6 +39,7 @@ type FaderoomState = {
   setCrossfade: (v: number) => void;
   cycleDeckTarget: () => void;
   setTrackBPM: (id: string, bpm: number) => void;
+  setDeckPlaybackRate: (side: DeckSide, rate: number) => void;
 };
 
 const defaultEQ = () => ({ high: 0, mid: 0, low: 0 });
@@ -46,15 +48,26 @@ export const useFaderoom = create<FaderoomState>((set) => ({
   tracks: [],
   isHydrated: false,
   decks: {
-    A: { trackId: null, isPlaying: false, volume: 1, eq: defaultEQ() },
-    B: { trackId: null, isPlaying: false, volume: 1, eq: defaultEQ() },
+    A: {
+      trackId: null,
+      isPlaying: false,
+      volume: 1,
+      eq: defaultEQ(),
+      playbackRate: 1,
+    },
+    B: {
+      trackId: null,
+      isPlaying: false,
+      volume: 1,
+      eq: defaultEQ(),
+      playbackRate: 1,
+    },
   },
   nextDeckTarget: "A",
   crossfade: 0.5,
 
   setTracks: (tracks) => set({ tracks }),
-  addTrack: (track) =>
-    set((state) => ({ tracks: [track, ...state.tracks] })),
+  addTrack: (track) => set((state) => ({ tracks: [track, ...state.tracks] })),
   removeTrack: (id) =>
     set((state) => ({ tracks: state.tracks.filter((t) => t.id !== id) })),
   setHydrated: (v) => set({ isHydrated: v }),
@@ -63,7 +76,12 @@ export const useFaderoom = create<FaderoomState>((set) => ({
     set((state) => ({
       decks: {
         ...state.decks,
-        [side]: { ...state.decks[side], trackId, isPlaying: false },
+        [side]: {
+          ...state.decks[side],
+          trackId,
+          isPlaying: false,
+          playbackRate: 1,
+        },
       },
     })),
   setDeckPlaying: (side, isPlaying) =>
@@ -98,5 +116,12 @@ export const useFaderoom = create<FaderoomState>((set) => ({
   setTrackBPM: (id, bpm) =>
     set((state) => ({
       tracks: state.tracks.map((t) => (t.id === id ? { ...t, bpm } : t)),
+    })),
+  setDeckPlaybackRate: (side, rate) =>
+    set((state) => ({
+      decks: {
+        ...state.decks,
+        [side]: { ...state.decks[side], playbackRate: rate },
+      },
     })),
 }));

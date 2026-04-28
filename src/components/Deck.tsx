@@ -8,8 +8,16 @@ import { Waveform } from "./Waveform";
 
 export function Deck({ side }: { side: DeckSide }) {
   const deck = useFaderoom((s) => s.decks[side]);
-  const track = useFaderoom((s) => s.tracks.find((t) => t.id === deck.trackId));
+  const otherDeck = useFaderoom((s) => s.decks[side === "A" ? "B" : "A"]);
+  const track = useFaderoom((s) =>
+    s.tracks.find((t) => t.id === deck.trackId),
+  );
+  const otherTrack = useFaderoom((s) =>
+    s.tracks.find((t) => t.id === otherDeck.trackId),
+  );
   const setDeckPlaying = useFaderoom((s) => s.setDeckPlaying);
+  const setTrackBPM = useFaderoom((s) => s.setTrackBPM);
+  const setDeckPlaybackRate = useFaderoom((s) => s.setDeckPlaybackRate);
 
   const [currentTime, setCurrentTime] = useState(0);
 
@@ -47,8 +55,47 @@ export function Deck({ side }: { side: DeckSide }) {
     }
   }
 
+  function adjustBPM(multiplier: number) {
+    if (!track || track.bpm === undefined) return;
+    const newBpm = Math.round(track.bpm * multiplier * 10) / 10;
+    setTrackBPM(track.id, newBpm);
+    // Also persist; we'll use updateTrackBPM via dynamic import to avoid
+    // pulling db into Deck. Simpler: just call directly.
+    import("@/lib/db").then(({ updateTrackBPM }) => {
+      updateTrackBPM(track.id, newBpm);
+    });
+  }
+
+  function handleSync() {
+    if (!track || track.bpm === undefined) return;
+    if (!otherTrack || otherTrack.bpm === undefined) return;
+
+    // Other deck's *effective* BPM (after its own playback rate)
+    const otherEffectiveBPM = otherTrack.bpm * otherDeck.playbackRate;
+    const newRate = otherEffectiveBPM / track.bpm;
+
+    // Cap the rate to a sane DJ range to avoid chipmunk extremes
+    const clamped = Math.max(0.5, Math.min(2, newRate));
+
+    engine.setPlaybackRate(side, clamped);
+    setDeckPlaybackRate(side, clamped);
+  }
+
+  function resetSync() {
+    engine.setPlaybackRate(side, 1);
+    setDeckPlaybackRate(side, 1);
+  }
+
   const duration = track?.duration ?? 0;
   const hasTrack = !!track;
+  const effectiveBPM =
+    track?.bpm !== undefined ? track.bpm * deck.playbackRate : null;
+  const isSynced = Math.abs(deck.playbackRate - 1) > 0.001;
+  const canSync =
+    hasTrack &&
+    track?.bpm !== undefined &&
+    !!otherTrack &&
+    otherTrack.bpm !== undefined;
 
   return (
     <section className="flex-1 bg-bg flex flex-col min-w-0">
@@ -66,27 +113,68 @@ export function Deck({ side }: { side: DeckSide }) {
       </div>
 
       {/* Waveform */}
-      <Waveform side={side} isPlaying={deck.isPlaying} trackId={deck.trackId} />
+      <Waveform
+        side={side}
+        isPlaying={deck.isPlaying}
+        trackId={deck.trackId}
+      />
 
       {/* Track info */}
-      <div className="p-4 flex items-center justify-between">
+      <div className="px-4 py-3 flex items-center justify-between">
         <div className="text-xs text-text-muted uppercase tracking-widest tabular-nums">
           {hasTrack ? formatDuration(currentTime) : "00:00"} /{" "}
           {hasTrack ? formatDuration(duration) : "00:00"}
         </div>
-        <div className="text-xs uppercase tracking-widest tabular-nums">
-          {track?.bpm !== undefined ? (
-            <span className="text-accent">{track.bpm.toFixed(1)} BPM</span>
-          ) : hasTrack ? (
-            <span className="text-text-muted animate-pulse">analyzing…</span>
-          ) : (
-            <span className="text-text-muted">--- BPM</span>
+        <div className="flex items-center gap-2">
+          {/* Half/double BPM */}
+          {hasTrack && track?.bpm !== undefined && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => adjustBPM(0.5)}
+                className="text-[10px] px-1.5 py-0.5 border border-border hover:border-accent hover:text-accent rounded-sm transition-colors text-text-muted"
+                title="Halve detected BPM"
+              >
+                ÷2
+              </button>
+              <button
+                onClick={() => adjustBPM(2)}
+                className="text-[10px] px-1.5 py-0.5 border border-border hover:border-accent hover:text-accent rounded-sm transition-colors text-text-muted"
+                title="Double detected BPM"
+              >
+                ×2
+              </button>
+            </div>
           )}
+          <div className="text-xs uppercase tracking-widest tabular-nums">
+            {track?.bpm !== undefined ? (
+              isSynced && effectiveBPM !== null ? (
+                <span>
+                  <span className="text-accent">
+                    {effectiveBPM.toFixed(1)}
+                  </span>
+                  <span className="text-text-muted">
+                    {" "}
+                    / {track.bpm.toFixed(1)} BPM
+                  </span>
+                </span>
+              ) : (
+                <span className="text-accent">
+                  {track.bpm.toFixed(1)} BPM
+                </span>
+              )
+            ) : hasTrack ? (
+              <span className="text-text-muted animate-pulse">
+                analyzing…
+              </span>
+            ) : (
+              <span className="text-text-muted">--- BPM</span>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Play button */}
-      <div className="flex-1 flex items-center justify-center p-8">
+      {/* Controls */}
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6">
         <button
           disabled={!hasTrack}
           onClick={togglePlay}
@@ -98,6 +186,35 @@ export function Deck({ side }: { side: DeckSide }) {
         >
           {deck.isPlaying ? "pause" : "play"}
         </button>
+
+        {/* Sync controls */}
+        <div className="flex items-center gap-2">
+          <button
+            disabled={!canSync}
+            onClick={handleSync}
+            className={`text-xs uppercase tracking-widest px-3 py-1.5 rounded-sm transition border disabled:opacity-30 disabled:cursor-not-allowed ${
+              isSynced
+                ? "bg-accent text-bg border-accent"
+                : "border-border hover:border-accent hover:text-accent text-text-muted"
+            }`}
+            title={
+              canSync
+                ? `Match this deck's BPM to deck ${side === "A" ? "B" : "A"}`
+                : "Need a track on both decks with detected BPM"
+            }
+          >
+            sync
+          </button>
+          {isSynced && (
+            <button
+              onClick={resetSync}
+              className="text-xs uppercase tracking-widest px-2 py-1.5 rounded-sm border border-border hover:border-accent hover:text-accent text-text-muted transition"
+              title="Reset to native tempo"
+            >
+              ×
+            </button>
+          )}
+        </div>
       </div>
     </section>
   );

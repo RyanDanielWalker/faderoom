@@ -21,6 +21,7 @@ type DeckState = {
   isPlaying: boolean;
   volume: number;
   eq: { high: number; mid: number; low: number };
+  playbackRate: number; // 1.0 = native speed
 };
 
 class Engine {
@@ -76,6 +77,7 @@ class Engine {
         isPlaying: false,
         volume: 1,
         eq: { high: 0, mid: 0, low: 0 },
+        playbackRate: 1.0,
       };
     };
     this.decks = { A: makeDeck(), B: makeDeck() };
@@ -125,6 +127,7 @@ class Engine {
 
     const source = ctx.createBufferSource();
     source.buffer = deck.buffer;
+    source.playbackRate.value = deck.playbackRate;
     source.connect(deck.eqHigh);
     source.onended = () => {
       if (deck.source === source) {
@@ -147,8 +150,8 @@ class Engine {
     const deck = this.decks[side];
     if (!deck.isPlaying || !deck.source) return;
 
-    const elapsed = this.ctx.currentTime - deck.startedAt;
-    deck.offset = deck.offset + elapsed;
+    const realElapsed = this.ctx.currentTime - deck.startedAt;
+    deck.offset = deck.offset + realElapsed * deck.playbackRate;
     deck.source.onended = null;
     deck.source.stop();
     deck.source.disconnect();
@@ -256,7 +259,8 @@ class Engine {
     if (!this.decks || !this.ctx) return 0;
     const deck = this.decks[side];
     if (!deck.isPlaying) return deck.offset;
-    return deck.offset + (this.ctx.currentTime - deck.startedAt);
+    const realElapsed = this.ctx.currentTime - deck.startedAt;
+    return deck.offset + realElapsed * deck.playbackRate;
   }
 
   getDuration(side: DeckSide): number {
@@ -277,6 +281,30 @@ class Engine {
   }
   private notify(): void {
     this.listeners.forEach((fn) => fn());
+  }
+
+  setPlaybackRate(side: DeckSide, rate: number): void {
+    if (!this.decks || !this.ctx) return;
+    const deck = this.decks[side];
+    // Recompute offset before changing rate, so getCurrentTime stays accurate
+    if (deck.isPlaying) {
+      const realElapsed = this.ctx.currentTime - deck.startedAt;
+      deck.offset = deck.offset + realElapsed * deck.playbackRate;
+      deck.startedAt = this.ctx.currentTime;
+      if (deck.source) {
+        deck.source.playbackRate.setTargetAtTime(
+          rate,
+          this.ctx.currentTime,
+          0.05,
+        );
+      }
+    }
+    deck.playbackRate = rate;
+    this.notify();
+  }
+
+  getPlaybackRate(side: DeckSide): number {
+    return this.decks?.[side].playbackRate ?? 1;
   }
 }
 
