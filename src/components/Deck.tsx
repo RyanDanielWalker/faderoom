@@ -9,15 +9,13 @@ import { Waveform } from "./Waveform";
 export function Deck({ side }: { side: DeckSide }) {
   const deck = useFaderoom((s) => s.decks[side]);
   const otherDeck = useFaderoom((s) => s.decks[side === "A" ? "B" : "A"]);
-  const track = useFaderoom((s) =>
-    s.tracks.find((t) => t.id === deck.trackId),
-  );
+  const track = useFaderoom((s) => s.tracks.find((t) => t.id === deck.trackId));
   const otherTrack = useFaderoom((s) =>
     s.tracks.find((t) => t.id === otherDeck.trackId),
   );
   const setDeckPlaying = useFaderoom((s) => s.setDeckPlaying);
-  const setTrackBPM = useFaderoom((s) => s.setTrackBPM);
   const setDeckPlaybackRate = useFaderoom((s) => s.setDeckPlaybackRate);
+  const setDeckBpmMultiplier = useFaderoom((s) => s.setDeckBpmMultiplier);
 
   const [currentTime, setCurrentTime] = useState(0);
 
@@ -55,28 +53,26 @@ export function Deck({ side }: { side: DeckSide }) {
     }
   }
 
-  function adjustBPM(multiplier: number) {
-    if (!track || track.bpm === undefined) return;
-    const newBpm = Math.round(track.bpm * multiplier * 10) / 10;
-    setTrackBPM(track.id, newBpm);
-    // Also persist; we'll use updateTrackBPM via dynamic import to avoid
-    // pulling db into Deck. Simpler: just call directly.
-    import("@/lib/db").then(({ updateTrackBPM }) => {
-      updateTrackBPM(track.id, newBpm);
-    });
+  function adjustMultiplier(factor: number) {
+    const newMult = deck.bpmMultiplier * factor;
+    const clamped = Math.max(0.25, Math.min(4, newMult));
+    setDeckBpmMultiplier(side, clamped);
+  }
+
+  function revertMultiplier() {
+    setDeckBpmMultiplier(side, 1);
   }
 
   function handleSync() {
     if (!track || track.bpm === undefined) return;
     if (!otherTrack || otherTrack.bpm === undefined) return;
 
-    // Other deck's *effective* BPM (after its own playback rate)
-    const otherEffectiveBPM = otherTrack.bpm * otherDeck.playbackRate;
-    const newRate = otherEffectiveBPM / track.bpm;
+    const otherEffectiveBPM =
+      otherTrack.bpm * otherDeck.bpmMultiplier * otherDeck.playbackRate;
+    const thisInterpretedBPM = track.bpm * deck.bpmMultiplier;
+    const newRate = otherEffectiveBPM / thisInterpretedBPM;
 
-    // Cap the rate to a sane DJ range to avoid chipmunk extremes
     const clamped = Math.max(0.5, Math.min(2, newRate));
-
     engine.setPlaybackRate(side, clamped);
     setDeckPlaybackRate(side, clamped);
   }
@@ -88,9 +84,12 @@ export function Deck({ side }: { side: DeckSide }) {
 
   const duration = track?.duration ?? 0;
   const hasTrack = !!track;
+  const interpretedBPM =
+    track?.bpm !== undefined ? track.bpm * deck.bpmMultiplier : null;
   const effectiveBPM =
-    track?.bpm !== undefined ? track.bpm * deck.playbackRate : null;
+    interpretedBPM !== null ? interpretedBPM * deck.playbackRate : null;
   const isSynced = Math.abs(deck.playbackRate - 1) > 0.001;
+  const isMultiplied = Math.abs(deck.bpmMultiplier - 1) > 0.001;
   const canSync =
     hasTrack &&
     track?.bpm !== undefined &&
@@ -113,11 +112,7 @@ export function Deck({ side }: { side: DeckSide }) {
       </div>
 
       {/* Waveform */}
-      <Waveform
-        side={side}
-        isPlaying={deck.isPlaying}
-        trackId={deck.trackId}
-      />
+      <Waveform side={side} isPlaying={deck.isPlaying} trackId={deck.trackId} />
 
       {/* Track info */}
       <div className="px-4 py-3 flex items-center justify-between">
@@ -126,31 +121,39 @@ export function Deck({ side }: { side: DeckSide }) {
           {hasTrack ? formatDuration(duration) : "00:00"}
         </div>
         <div className="flex items-center gap-2">
-          {/* Half/double BPM */}
           {hasTrack && track?.bpm !== undefined && (
             <div className="flex items-center gap-1">
               <button
-                onClick={() => adjustBPM(0.5)}
+                onClick={() => adjustMultiplier(0.5)}
                 className="text-[10px] px-1.5 py-0.5 border border-border hover:border-accent hover:text-accent rounded-sm transition-colors text-text-muted"
-                title="Halve detected BPM"
+                title="Halve interpretation for this deck"
               >
                 ÷2
               </button>
               <button
-                onClick={() => adjustBPM(2)}
+                onClick={() => adjustMultiplier(2)}
                 className="text-[10px] px-1.5 py-0.5 border border-border hover:border-accent hover:text-accent rounded-sm transition-colors text-text-muted"
-                title="Double detected BPM"
+                title="Double interpretation for this deck"
               >
                 ×2
               </button>
+              {isMultiplied && (
+                <button
+                  onClick={revertMultiplier}
+                  className="text-[10px] px-1.5 py-0.5 border border-accent text-accent hover:bg-accent hover:text-bg rounded-sm transition-colors"
+                  title={`Revert to detected BPM (${track.bpm.toFixed(1)})`}
+                >
+                  ↺
+                </button>
+              )}
             </div>
           )}
           <div className="text-xs uppercase tracking-widest tabular-nums">
             {track?.bpm !== undefined ? (
-              isSynced && effectiveBPM !== null ? (
+              isSynced || isMultiplied ? (
                 <span>
                   <span className="text-accent">
-                    {effectiveBPM.toFixed(1)}
+                    {effectiveBPM!.toFixed(1)}
                   </span>
                   <span className="text-text-muted">
                     {" "}
@@ -158,14 +161,10 @@ export function Deck({ side }: { side: DeckSide }) {
                   </span>
                 </span>
               ) : (
-                <span className="text-accent">
-                  {track.bpm.toFixed(1)} BPM
-                </span>
+                <span className="text-accent">{track.bpm.toFixed(1)} BPM</span>
               )
             ) : hasTrack ? (
-              <span className="text-text-muted animate-pulse">
-                analyzing…
-              </span>
+              <span className="text-text-muted animate-pulse">analyzing…</span>
             ) : (
               <span className="text-text-muted">--- BPM</span>
             )}

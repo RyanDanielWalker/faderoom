@@ -18,6 +18,7 @@ type DeckSlot = {
   volume: number;
   eq: { high: number; mid: number; low: number };
   playbackRate: number;
+  bpmMultiplier: number;
 };
 
 type FaderoomState = {
@@ -40,6 +41,7 @@ type FaderoomState = {
   cycleDeckTarget: () => void;
   setTrackBPM: (id: string, bpm: number) => void;
   setDeckPlaybackRate: (side: DeckSide, rate: number) => void;
+  setDeckBpmMultiplier: (side: DeckSide, multiplier: number) => void;
 };
 
 const defaultEQ = () => ({ high: 0, mid: 0, low: 0 });
@@ -54,6 +56,7 @@ export const useFaderoom = create<FaderoomState>((set) => ({
       volume: 1,
       eq: defaultEQ(),
       playbackRate: 1,
+      bpmMultiplier: 1,
     },
     B: {
       trackId: null,
@@ -61,6 +64,7 @@ export const useFaderoom = create<FaderoomState>((set) => ({
       volume: 1,
       eq: defaultEQ(),
       playbackRate: 1,
+      bpmMultiplier: 1,
     },
   },
   nextDeckTarget: "A",
@@ -81,6 +85,7 @@ export const useFaderoom = create<FaderoomState>((set) => ({
           trackId,
           isPlaying: false,
           playbackRate: 1,
+          bpmMultiplier: 1,
         },
       },
     })),
@@ -122,6 +127,13 @@ export const useFaderoom = create<FaderoomState>((set) => ({
       decks: {
         ...state.decks,
         [side]: { ...state.decks[side], playbackRate: rate },
+      },
+    })),
+  setDeckBpmMultiplier: (side, multiplier) =>
+    set((state) => ({
+      decks: {
+        ...state.decks,
+        [side]: { ...state.decks[side], bpmMultiplier: multiplier },
       },
     })),
 }));
