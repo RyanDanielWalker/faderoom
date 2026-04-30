@@ -5,6 +5,7 @@ import { useFaderoom, DeckSide } from "@/lib/store";
 import { engine } from "@/lib/engine";
 import { formatDuration } from "@/lib/audio";
 import { Waveform } from "./Waveform";
+import { TempoSlider } from "./TempoSlider";
 
 export function Deck({ side }: { side: DeckSide }) {
   const deck = useFaderoom((s) => s.decks[side]);
@@ -38,9 +39,12 @@ export function Deck({ side }: { side: DeckSide }) {
       const playing = engine.isPlaying(side);
       setDeckPlaying(side, playing);
       setCurrentTime(engine.getCurrentTime(side));
+      // Keep store rate in sync with engine (important during smooth ramps)
+      const engineRate = engine.getPlaybackRate(side);
+      setDeckPlaybackRate(side, engineRate);
     });
     return unsub;
-  }, [side, setDeckPlaying]);
+  }, [side, setDeckPlaying, setDeckPlaybackRate]);
 
   function togglePlay() {
     if (!track) return;
@@ -77,8 +81,17 @@ export function Deck({ side }: { side: DeckSide }) {
     setDeckPlaybackRate(side, clamped);
   }
 
-  function resetSync() {
-    engine.setPlaybackRate(side, 1);
+  function handleManualRate(rate: number) {
+    engine.setPlaybackRate(side, rate);
+    setDeckPlaybackRate(side, rate);
+  }
+
+  function handleTempoReset() {
+    // Smooth ramp back to native over 3 seconds
+    engine.rampPlaybackRate(side, 1, 3);
+    // Note: store updates happen via the engine's notify() during ramp,
+    // but we also need to subscribe to those updates. Let's also keep the
+    // store updated at the end so it's accurate even if user navigates away.
     setDeckPlaybackRate(side, 1);
   }
 
@@ -173,21 +186,29 @@ export function Deck({ side }: { side: DeckSide }) {
       </div>
 
       {/* Controls */}
-      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6">
-        <button
-          disabled={!hasTrack}
-          onClick={togglePlay}
-          className={`w-20 h-20 rounded-full text-xs uppercase tracking-widest transition disabled:opacity-30 disabled:cursor-not-allowed ${
-            deck.isPlaying
-              ? "bg-accent text-bg border border-accent hover:bg-accent/90"
-              : "border border-border hover:border-border-bright text-text-muted hover:text-text"
-          }`}
-        >
-          {deck.isPlaying ? "pause" : "play"}
-        </button>
+      <div className="flex-1 flex items-center justify-center gap-8 p-6">
+        {/* Tempo slider */}
+        <TempoSlider
+          rate={deck.playbackRate}
+          onChange={handleManualRate}
+          onReset={handleTempoReset}
+          label="TEMPO"
+        />
 
-        {/* Sync controls */}
-        <div className="flex items-center gap-2">
+        {/* Play + sync stack */}
+        <div className="flex flex-col items-center gap-4">
+          <button
+            disabled={!hasTrack}
+            onClick={togglePlay}
+            className={`w-20 h-20 rounded-full text-xs uppercase tracking-widest transition disabled:opacity-30 disabled:cursor-not-allowed ${
+              deck.isPlaying
+                ? "bg-accent text-bg border border-accent hover:bg-accent/90"
+                : "border border-border hover:border-border-bright text-text-muted hover:text-text"
+            }`}
+          >
+            {deck.isPlaying ? "pause" : "play"}
+          </button>
+
           <button
             disabled={!canSync}
             onClick={handleSync}
@@ -204,15 +225,6 @@ export function Deck({ side }: { side: DeckSide }) {
           >
             sync
           </button>
-          {isSynced && (
-            <button
-              onClick={resetSync}
-              className="text-xs uppercase tracking-widest px-2 py-1.5 rounded-sm border border-border hover:border-accent hover:text-accent text-text-muted transition"
-              title="Reset to native tempo"
-            >
-              ×
-            </button>
-          )}
         </div>
       </div>
     </section>

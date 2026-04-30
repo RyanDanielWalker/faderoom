@@ -303,6 +303,57 @@ class Engine {
     this.notify();
   }
 
+  rampPlaybackRate(side: DeckSide, target: number, durationSec: number): void {
+  if (!this.decks || !this.ctx) return;
+  const deck = this.decks[side];
+
+  // Settle the offset at current position, then ramp from current rate to target
+  if (deck.isPlaying) {
+    const realElapsed = this.ctx.currentTime - deck.startedAt;
+    deck.offset = deck.offset + realElapsed * deck.playbackRate;
+    deck.startedAt = this.ctx.currentTime;
+  }
+
+  const startRate = deck.playbackRate;
+  const startTime = this.ctx.currentTime;
+
+  // Schedule the audio ramp
+  if (deck.isPlaying && deck.source) {
+    deck.source.playbackRate.cancelScheduledValues(startTime);
+    deck.source.playbackRate.setValueAtTime(startRate, startTime);
+    deck.source.playbackRate.linearRampToValueAtTime(
+      target,
+      startTime + durationSec,
+    );
+  }
+
+  // Animate the cached rate so UI stays in sync
+  const startPerf = performance.now();
+  const tick = () => {
+    const elapsedSec = (performance.now() - startPerf) / 1000;
+    const t = Math.min(1, elapsedSec / durationSec);
+    const current = startRate + (target - startRate) * t;
+
+    // Re-baseline the offset before changing rate so getCurrentTime stays correct
+    if (this.decks && this.ctx) {
+      const d = this.decks[side];
+      if (d.isPlaying) {
+        const elapsedReal = this.ctx.currentTime - d.startedAt;
+        d.offset = d.offset + elapsedReal * d.playbackRate;
+        d.startedAt = this.ctx.currentTime;
+      }
+      d.playbackRate = current;
+    }
+
+    this.notify();
+
+    if (t < 1) {
+      requestAnimationFrame(tick);
+    }
+  };
+  requestAnimationFrame(tick);
+}
+
   getPlaybackRate(side: DeckSide): number {
     return this.decks?.[side].playbackRate ?? 1;
   }
