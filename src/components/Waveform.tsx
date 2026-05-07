@@ -60,8 +60,10 @@ export function Waveform({ side, isPlaying, trackId }: Props) {
     let raf: number;
 
     const styles = getComputedStyle(document.documentElement);
-    const accent = styles.getPropertyValue("--color-accent").trim() || "#ff6b35";
-    const muted = styles.getPropertyValue("--color-border-bright").trim() || "#333";
+    const accent =
+      styles.getPropertyValue("--color-accent").trim() || "#d4ff00";
+    const muted =
+      styles.getPropertyValue("--color-border-bright").trim() || "#333";
     const playheadColor = "#ffffff";
 
     const draw = () => {

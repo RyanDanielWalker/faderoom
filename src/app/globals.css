@@ -8,8 +8,8 @@
   --color-border-bright: #333333;
   --color-text: #fafafa;
   --color-text-muted: #737373;
-  --color-accent: #ff6b35;
-  --color-accent-dim: #8a3a1c;
+  --color-accent: #d4ff00;
+  --color-accent-dim: #6b8000;
 
   --font-mono: var(--font-mono), ui-monospace, monospace;
   --font-display: var(--font-display), sans-serif;
