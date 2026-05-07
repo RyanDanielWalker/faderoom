@@ -12,6 +12,7 @@ type DeckState = {
   eqHigh: BiquadFilterNode;
   eqMid: BiquadFilterNode;
   eqLow: BiquadFilterNode;
+  filter: BiquadFilterNode;
   channelGain: GainNode;
   crossfadeGain: GainNode;
   buffer: AudioBuffer | null;
@@ -21,7 +22,8 @@ type DeckState = {
   isPlaying: boolean;
   volume: number;
   eq: { high: number; mid: number; low: number };
-  playbackRate: number; // 1.0 = native speed
+  playbackRate: number;
+  filterPosition: number; // -1 (full lowpass) to +1 (full highpass), 0 = bypass
 };
 
 class Engine {
@@ -52,6 +54,11 @@ class Engine {
       eqLow.frequency.value = 220;
       eqLow.gain.value = 0;
 
+      const filter = ctx.createBiquadFilter();
+      filter.type = "allpass"; // bypass mode by default
+      filter.frequency.value = 20000;
+      filter.Q.value = 0.7;
+
       const channelGain = ctx.createGain();
       const crossfadeGain = ctx.createGain();
       channelGain.gain.value = 1;
@@ -59,7 +66,8 @@ class Engine {
 
       eqHigh.connect(eqMid);
       eqMid.connect(eqLow);
-      eqLow.connect(channelGain);
+      eqLow.connect(filter);
+      filter.connect(channelGain);
       channelGain.connect(crossfadeGain);
       crossfadeGain.connect(ctx.destination);
 
@@ -68,6 +76,7 @@ class Engine {
         eqHigh,
         eqMid,
         eqLow,
+        filter,
         channelGain,
         crossfadeGain,
         buffer: null,
@@ -78,6 +87,7 @@ class Engine {
         volume: 1,
         eq: { high: 0, mid: 0, low: 0 },
         playbackRate: 1.0,
+        filterPosition: 0,
       };
     };
     this.decks = { A: makeDeck(), B: makeDeck() };
@@ -304,58 +314,93 @@ class Engine {
   }
 
   rampPlaybackRate(side: DeckSide, target: number, durationSec: number): void {
-  if (!this.decks || !this.ctx) return;
-  const deck = this.decks[side];
+    if (!this.decks || !this.ctx) return;
+    const deck = this.decks[side];
 
-  // Settle the offset at current position, then ramp from current rate to target
-  if (deck.isPlaying) {
-    const realElapsed = this.ctx.currentTime - deck.startedAt;
-    deck.offset = deck.offset + realElapsed * deck.playbackRate;
-    deck.startedAt = this.ctx.currentTime;
-  }
+    // Settle the offset at current position, then ramp from current rate to target
+    if (deck.isPlaying) {
+      const realElapsed = this.ctx.currentTime - deck.startedAt;
+      deck.offset = deck.offset + realElapsed * deck.playbackRate;
+      deck.startedAt = this.ctx.currentTime;
+    }
 
-  const startRate = deck.playbackRate;
-  const startTime = this.ctx.currentTime;
+    const startRate = deck.playbackRate;
+    const startTime = this.ctx.currentTime;
 
-  // Schedule the audio ramp
-  if (deck.isPlaying && deck.source) {
-    deck.source.playbackRate.cancelScheduledValues(startTime);
-    deck.source.playbackRate.setValueAtTime(startRate, startTime);
-    deck.source.playbackRate.linearRampToValueAtTime(
-      target,
-      startTime + durationSec,
-    );
-  }
+    // Schedule the audio ramp
+    if (deck.isPlaying && deck.source) {
+      deck.source.playbackRate.cancelScheduledValues(startTime);
+      deck.source.playbackRate.setValueAtTime(startRate, startTime);
+      deck.source.playbackRate.linearRampToValueAtTime(
+        target,
+        startTime + durationSec,
+      );
+    }
 
-  // Animate the cached rate so UI stays in sync
-  const startPerf = performance.now();
-  const tick = () => {
-    const elapsedSec = (performance.now() - startPerf) / 1000;
-    const t = Math.min(1, elapsedSec / durationSec);
-    const current = startRate + (target - startRate) * t;
+    // Animate the cached rate so UI stays in sync
+    const startPerf = performance.now();
+    const tick = () => {
+      const elapsedSec = (performance.now() - startPerf) / 1000;
+      const t = Math.min(1, elapsedSec / durationSec);
+      const current = startRate + (target - startRate) * t;
 
-    // Re-baseline the offset before changing rate so getCurrentTime stays correct
-    if (this.decks && this.ctx) {
-      const d = this.decks[side];
-      if (d.isPlaying) {
-        const elapsedReal = this.ctx.currentTime - d.startedAt;
-        d.offset = d.offset + elapsedReal * d.playbackRate;
-        d.startedAt = this.ctx.currentTime;
+      // Re-baseline the offset before changing rate so getCurrentTime stays correct
+      if (this.decks && this.ctx) {
+        const d = this.decks[side];
+        if (d.isPlaying) {
+          const elapsedReal = this.ctx.currentTime - d.startedAt;
+          d.offset = d.offset + elapsedReal * d.playbackRate;
+          d.startedAt = this.ctx.currentTime;
+        }
+        d.playbackRate = current;
       }
-      d.playbackRate = current;
-    }
 
-    this.notify();
+      this.notify();
 
-    if (t < 1) {
-      requestAnimationFrame(tick);
-    }
-  };
-  requestAnimationFrame(tick);
-}
+      if (t < 1) {
+        requestAnimationFrame(tick);
+      }
+    };
+    requestAnimationFrame(tick);
+  }
 
   getPlaybackRate(side: DeckSide): number {
     return this.decks?.[side].playbackRate ?? 1;
+  }
+
+  // Filter knob position: -1 (max lowpass) to +1 (max highpass), 0 = bypass.
+  setFilter(side: DeckSide, position: number): void {
+    this.ensureContext();
+    if (!this.decks || !this.ctx) return;
+    const deck = this.decks[side];
+    const clamped = Math.max(-1, Math.min(1, position));
+    deck.filterPosition = clamped;
+
+    const t = this.ctx.currentTime;
+    const dead = 0.05; // dead zone near center for stable bypass
+
+    if (Math.abs(clamped) < dead) {
+      // Bypass: allpass at high frequency does nothing audible
+      deck.filter.type = "allpass";
+      deck.filter.frequency.setTargetAtTime(20000, t, 0.01);
+    } else if (clamped < 0) {
+      // Lowpass: sweep from 20kHz (no effect) toward 200Hz (heavy muffle)
+      // Map [-1, -dead] -> [200, 20000] logarithmically
+      const norm = (Math.abs(clamped) - dead) / (1 - dead); // 0..1
+      const freq = 20000 * Math.pow(200 / 20000, norm);
+      deck.filter.type = "lowpass";
+      deck.filter.frequency.setTargetAtTime(freq, t, 0.01);
+    } else {
+      // Highpass: sweep from 20Hz (no effect) toward 8kHz (very thin)
+      const norm = (clamped - dead) / (1 - dead);
+      const freq = 20 * Math.pow(8000 / 20, norm);
+      deck.filter.type = "highpass";
+      deck.filter.frequency.setTargetAtTime(freq, t, 0.01);
+    }
+  }
+
+  getFilter(side: DeckSide): number {
+    return this.decks?.[side].filterPosition ?? 0;
   }
 }
 

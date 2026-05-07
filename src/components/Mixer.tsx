@@ -17,14 +17,24 @@ function formatDb(db: number): string {
   return `${sign}${db.toFixed(0)}`;
 }
 
+function formatFilter(v: number): string {
+  if (Math.abs(v) < 0.05) return "0";
+  return v > 0
+    ? `H${(v * 100).toFixed(0)}`
+    : `L${(Math.abs(v) * 100).toFixed(0)}`;
+}
+
 export function Mixer() {
   const volumeA = useFaderoom((s) => s.decks.A.volume);
   const volumeB = useFaderoom((s) => s.decks.B.volume);
   const eqA = useFaderoom((s) => s.decks.A.eq);
   const eqB = useFaderoom((s) => s.decks.B.eq);
+  const filterA = useFaderoom((s) => s.decks.A.filter);
+  const filterB = useFaderoom((s) => s.decks.B.filter);
   const crossfade = useFaderoom((s) => s.crossfade);
   const setDeckVolume = useFaderoom((s) => s.setDeckVolume);
   const setDeckEQ = useFaderoom((s) => s.setDeckEQ);
+  const setDeckFilter = useFaderoom((s) => s.setDeckFilter);
   const setCrossfade = useFaderoom((s) => s.setCrossfade);
 
   function handleVolume(side: DeckSide, value: number) {
@@ -35,6 +45,11 @@ export function Mixer() {
   function handleEQ(side: DeckSide, band: EQBand, value: number) {
     engine.setEQ(side, band, value);
     setDeckEQ(side, band, value);
+  }
+
+  function handleFilter(side: DeckSide, value: number) {
+    engine.setFilter(side, value);
+    setDeckFilter(side, value);
   }
 
   function handleCrossfade(value: number) {
@@ -49,6 +64,30 @@ export function Mixer() {
       </div>
 
       <div className="flex-1 p-5 flex flex-col gap-4 min-h-0">
+        {/* Filter knobs */}
+        <div className="grid grid-cols-2 gap-3 pb-3 border-b border-border">
+          {(["A", "B"] as const).map((side) => {
+            const value = side === "A" ? filterA : filterB;
+            return (
+              <div
+                key={side}
+                className="flex items-center justify-center gap-2 py-1"
+              >
+                <Knob
+                  value={value}
+                  min={-1}
+                  max={1}
+                  defaultValue={0}
+                  label="FILTER"
+                  size={44}
+                  format={formatFilter}
+                  onChange={(v) => handleFilter(side, v)}
+                />
+              </div>
+            );
+          })}
+        </div>
+
         {/* EQ knobs — 3 rows (HI, MID, LO), 2 columns (A, B) */}
         {BANDS.map((band) => (
           <div key={band} className="grid grid-cols-2 gap-3">
