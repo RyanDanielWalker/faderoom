@@ -3,6 +3,7 @@
 import { useFaderoom, DeckSide, EQBand } from "@/lib/store";
 import { engine } from "@/lib/engine";
 import { Knob } from "./Knob";
+import { VerticalFader } from "./VerticalFader";
 
 const BANDS: EQBand[] = ["high", "mid", "low"];
 const BAND_LABELS: Record<EQBand, string> = {
@@ -64,6 +65,7 @@ export function Mixer() {
       </div>
 
       <div className="flex-1 p-5 flex flex-col gap-4 min-h-0">
+        {" "}
         {/* Filter knobs */}
         <div className="grid grid-cols-2 gap-3 pb-3 border-b border-border">
           {(["A", "B"] as const).map((side) => {
@@ -87,7 +89,6 @@ export function Mixer() {
             );
           })}
         </div>
-
         {/* EQ knobs — 3 rows (HI, MID, LO), 2 columns (A, B) */}
         {BANDS.map((band) => (
           <div key={band} className="grid grid-cols-2 gap-3">
@@ -113,32 +114,21 @@ export function Mixer() {
             })}
           </div>
         ))}
-
         {/* Channel faders */}
-        <div className="grid grid-cols-2 gap-3 h-40 mt-2">
+        <div className="grid grid-cols-2 gap-3 mt-2 mb-3">
           {(["A", "B"] as const).map((side) => {
             const volume = side === "A" ? volumeA : volumeB;
             return (
-              <div
-                key={side}
-                className="bg-surface-2 border border-border rounded-sm flex flex-col items-center justify-between py-2"
-              >
-                <div className="text-[10px] uppercase tracking-widest text-text-muted">
+              <div key={side} className="flex flex-col items-center gap-1.5">
+                <div className="text-[10px] uppercase tracking-widest text-text-muted tabular-nums">
                   {Math.round(volume * 100)}
                 </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
+                <VerticalFader
                   value={volume}
-                  onChange={(e) =>
-                    handleVolume(side, parseFloat(e.target.value))
-                  }
-                  onDoubleClick={() => handleVolume(side, 1)}
-                  className="fader-v flex-1"
-                  aria-label={`Deck ${side} volume`}
-                  title="Double-click to reset"
+                  onChange={(v) => handleVolume(side, v)}
+                  defaultValue={1}
+                  height={90}
+                  label={`Deck ${side} volume`}
                 />
                 <div className="text-xs font-bold text-accent">{side}</div>
               </div>

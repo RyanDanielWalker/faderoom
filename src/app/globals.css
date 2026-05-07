@@ -26,42 +26,6 @@ body {
   color: var(--color-bg);
 }
 
-/* Vertical fader (channel volume) */
-.fader-v {
-  writing-mode: vertical-lr;
-  direction: rtl; /* so increasing value goes up visually */
-  -webkit-appearance: slider-vertical;
-  appearance: slider-vertical;
-  width: 2rem;
-  background: transparent;
-  cursor: pointer;
-}
-.fader-v::-webkit-slider-runnable-track {
-  width: 2px;
-  background: var(--color-border);
-}
-.fader-v::-moz-range-track {
-  width: 2px;
-  background: var(--color-border);
-}
-.fader-v::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 2rem;
-  height: 0.5rem;
-  background: var(--color-text);
-  border: 1px solid var(--color-border-bright);
-  border-radius: 2px;
-  cursor: grab;
-}
-.fader-v::-moz-range-thumb {
-  width: 2rem;
-  height: 0.5rem;
-  background: var(--color-text);
-  border: 1px solid var(--color-border-bright);
-  border-radius: 2px;
-  cursor: grab;
-}
-
 /* Horizontal fader (crossfader) */
 .fader-h {
   -webkit-appearance: none;
