@@ -113,7 +113,15 @@ export function Deck({ side }: { side: DeckSide }) {
     <section className="flex-1 bg-bg flex flex-col min-w-0">
       {/* Deck header */}
       <div className="h-10 border-b border-border flex items-center justify-between px-4">
-        <span className="font-display font-extrabold text-accent tracking-widest">
+        <span
+          className="font-display font-extrabold text-accent tracking-widest shrink-0 transition-all"
+          style={{
+            textShadow: deck.isPlaying
+              ? "0 0 8px var(--color-accent), 0 0 16px var(--color-accent)"
+              : "none",
+            opacity: deck.isPlaying ? 1 : 0.6,
+          }}
+        >
           {side}
         </span>
         <span
@@ -212,6 +220,11 @@ export function Deck({ side }: { side: DeckSide }) {
           <button
             disabled={!canSync}
             onClick={handleSync}
+            style={{
+              boxShadow: isSynced
+                ? "0 0 12px var(--color-accent), 0 0 24px rgba(212, 255, 0, 0.4)"
+                : "none",
+            }}
             className={`text-xs uppercase tracking-widest px-3 py-1.5 rounded-sm transition border disabled:opacity-30 disabled:cursor-not-allowed ${
               isSynced
                 ? "bg-accent text-bg border-accent"

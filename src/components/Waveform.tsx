@@ -98,9 +98,13 @@ export function Waveform({ side, isPlaying, trackId }: Props) {
           );
         }
 
-        // Playhead line
+        // Playhead line with glow
+        ctx.save();
+        ctx.shadowColor = accent;
+        ctx.shadowBlur = 8;
         ctx.fillStyle = playheadColor;
         ctx.fillRect(Math.floor(playedX) - 0.5, 0, 1, size.h);
+        ctx.restore();
       }
 
       raf = requestAnimationFrame(draw);

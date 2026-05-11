@@ -84,9 +84,17 @@ export function VerticalFader({
       {/* Thumb */}
       <div
         className={`absolute left-0 right-0 rounded-sm cursor-grab active:cursor-grabbing transition-colors ${
-          dragging ? "bg-accent border border-accent" : "bg-text border border-border-bright"
+          dragging
+            ? "bg-accent border border-accent"
+            : "bg-text border border-border-bright"
         }`}
-        style={{ top: thumbY, height: thumbHeight }}
+        style={{
+          top: thumbY,
+          height: thumbHeight,
+          boxShadow: dragging
+            ? "0 0 8px var(--color-accent), 0 0 16px rgba(212, 255, 0, 0.3)"
+            : "none",
+        }}
       />
     </div>
   );

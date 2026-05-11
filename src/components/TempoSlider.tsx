@@ -99,7 +99,13 @@ export function TempoSlider({
               ? "bg-accent border border-accent"
               : "bg-text border border-border-bright"
           }`}
-          style={{ top: thumbY }}
+          style={{
+            top: thumbY,
+            boxShadow:
+              dragging || !isAtZero
+                ? "0 0 8px var(--color-accent), 0 0 16px rgba(212, 255, 0, 0.3)"
+                : "none",
+          }}
         />
       </div>
       <div className="text-[10px] tabular-nums text-text-muted min-h-[14px]">

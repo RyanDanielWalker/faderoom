@@ -11,7 +11,13 @@ export default function Home() {
         {/* Top bar */}
         <header className="h-12 border-b border-border flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-1.5 h-1.5 bg-accent rounded-full animate-pulse" />
+            <div
+              className="w-1.5 h-1.5 bg-accent rounded-full animate-pulse"
+              style={{
+                boxShadow:
+                  "0 0 8px var(--color-accent), 0 0 16px var(--color-accent)",
+              }}
+            />{" "}
             <span
               className="font-display font-extrabold tracking-widest text-sm"
               style={{ letterSpacing: "0.2em" }}

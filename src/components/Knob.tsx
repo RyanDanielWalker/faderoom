@@ -76,6 +76,7 @@ export function Knob({
   }, [dragging]);
 
   const display = format ? format(value) : value.toFixed(0);
+  const isActive = Math.abs(value - defaultValue) > 0.001;
 
   return (
     <div className="flex flex-col items-center gap-1">
@@ -105,13 +106,17 @@ export function Knob({
       >
         {/* Indicator line */}
         <div
-          className="absolute left-1/2 top-1/2 origin-bottom"
+          className="absolute left-1/2 top-1/2 origin-bottom transition-all"
           style={{
             transform: `translate(-50%, -100%) rotate(${angle}deg)`,
             width: 2,
             height: size / 2 - 4,
             background: "var(--color-accent)",
             borderRadius: 1,
+            boxShadow: isActive
+              ? "0 0 6px var(--color-accent), 0 0 12px var(--color-accent)"
+              : "none",
+            opacity: isActive ? 1 : 0.5,
           }}
         />
         {/* Center dot */}
